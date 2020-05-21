@@ -10,8 +10,8 @@
 
         $("#username").html(localStorage.getItem("username"));
         $("#message_submit").attr("disabled", true);
-        let room = "room1";
-        joinRoom("room1");
+        let room ="General";
+        joinRoom(room);
 
         // click send button when enter key is pressed
         $("#message_box").on("keyup", function(key) {
@@ -31,20 +31,21 @@
             const message = $("#message_box").val();
             const time = new Date().toLocaleString();
             $("#message_box").val("");
-            socket.send({"message":message, "username":username, "time":time});
+            socket.send({"message":message, "username":username, "time":time, "room":room});
         });
 
         // add new room
-        // document.getElementById("add_new_room_submit").onclick = () => {
-        //     const new_room_name = add_new_room.value;
-        //     document.getElementById("add_new_room").value = "";
-        //     socket.emit("new_room", {"new_room_name": new_room_name});
-        // }
+        $("#add_new_room_submit").on("click", function(){
+            var new_room_name = $("#add_new_room").val();
+            new_room_name = new_room_name.charAt(0).toUpperCase() + new_room_name.slice(1);
+            $("#add_new_room").val("");
+            socket.emit("add_room", {"new_room_name":new_room_name});
+        })
 
         // join room
         $("#room_list").on("click", function(e) {
             const target = e.target;
-            if (target.matches("p")) {
+            if (target.matches("li")) {
                 let newroom = target.innerHTML;
                 if (newroom == room) {
                     message = `already in ${room} room.`
@@ -57,42 +58,53 @@
             }
         })
 
-        // display message
+
+        // display message from users
         socket.on("message", data => {
             const p = document.createElement("p");
             const br = document.createElement("br");
-            const span_username = document.createElement("span");
-            const span_timestamp = document.createElement("span");
-
-            if(data.username) {
-                span_timestamp.innerHTML = data.time;
-                span_username.innerHTML = data.username;
-                p.innerHTML = span_username.outerHTML + br.outerHTML + data.message + br.outerHTML + span_timestamp.outerHTML;
-            } else {
-                printSysMsg(data.message);
-            }
+            const username = document.createElement("span");
+            const time = document.createElement("span");
+            time.innerHTML = data.time;
+            username.innerHTML = data.username;
+            p.innerHTML = username.outerHTML + br.outerHTML + data.message + br.outerHTML + time.outerHTML;
             $("#chat_window").append(p);
         })
 
-        // new room added
-        // socket.on("new_room_added", data => {
-        //     const p = document.createElement("p");
-        //     p.className = "room_select";
-        //     p.innerHTML = data.new_room_name;
-        //     document.getElementById("room_list").append(p);
-        // })
+        // someone joined the room
+        socket.on("joined", data => {
+            if (data.username === localStorage.getItem("username")) {
+
+                load_messages(data.history);
+                console.log(data);
+            }
+            printSysMsg(data.message);
+        })
+
+        // someone left the room
+        socket.on("left", data => {
+            printSysMsg(data.message);
+        })
+
+        // load room when first connected
+        socket.on("load_room", data => {
+            loadRooms(data);
+        })
+
+        // new room added from users
+        socket.on("new_room_added", data => {
+        appendRoom(data["new_room_name"]);
+        })
 
 
 // functions-----------------------------------------
         function leaveRoom(room) {
             socket.emit("leave", {"username":username, "room":room});
-            console.log("left");
         }
 
         function joinRoom(room) {
-            socket.emit("join", {"username":username, "room":room});
             $("#chat_window").html("");
-            console.log("joined");
+            socket.emit("join", {"username":username, "room":room});
         }
 
         function printSysMsg(message) {
@@ -101,4 +113,26 @@
             $("#chat_window").append(p);
         }
 
+        function loadRooms(data) {
+            for (room  in data["rooms"]) {
+                appendRoom(room);
+            }
+        }
+
+        function appendRoom(room) {
+            const li = document.createElement("li");
+            li.className = "list_item";
+            li.setAttribute("id", room);
+            li.innerHTML = room.charAt(0).toUpperCase() + room.slice(1);
+            $("#room_list").append(li);
+        }
+
+        function load_messages(data) {
+            for (i in data) {
+                const p = document.createElement("p");
+                p.innerHTML = data[i];
+                $("#chat_window").append(p);
+                document.getElementById("chat_window").innerHTML
+            }
+        }
     });

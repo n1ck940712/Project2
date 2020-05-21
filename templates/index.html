@@ -5,7 +5,7 @@
         <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/socket.io/1.3.6/socket.io.min.js"></script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
         <script src="{{ url_for('static', filename='main.js') }}"></script>
-        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"> 
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css">
 
         <title>Chat box</title>
     </head>
@@ -19,11 +19,9 @@
                         <input type="text" id="add_new_room">
                         <input type="button" id="add_new_room_submit" value="New room">
                     </div>
-                    <div id="room_list">
-                        {% for room in rooms%}
-                        <p class="room_select"> {{ room|title }}</p>
-                        {% endfor %}
-                    </div>
+                    <ul id="room_list">
+                        
+                    </ul>
                 </div>
 
             </nav>
