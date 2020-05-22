@@ -15,6 +15,7 @@ socketio = SocketIO(app)
 
 rooms = {}
 rooms["General"]=[]
+roomsList = ["General"]
 limit = 100
 # userlist={}
 
@@ -29,7 +30,8 @@ def connect():
 @socketio.on("message")
 def message(data):
     room = data["room"]
-    rooms[room].append(data["message"])
+    new_message ={"message":data["message"], "username":data["username"], "time":data["time"]}
+    rooms[room].append(new_message)
     if (len(rooms[room])>limit):
         rooms[room].pop(0)
     send({"message": data["message"], "username":data["username"], "time":data["time"]}, room=room)
@@ -51,9 +53,18 @@ def on_leave(data):
 
 @socketio.on("add_room")
 def new_room(data):
+    error = ""
     new_room_name = data["new_room_name"]
-    rooms[new_room_name]=[]
-    emit("new_room_added", {"new_room_name":new_room_name}, broadcast=True)
+    if new_room_name in roomsList:
+        error = "Room already exist. Please select another name for room."
+    elif ' ' in new_room_name:
+        error = "Room name cannot contain spaces."
+    elif new_room_name[0].isdigit():
+        error = "Room name cannot start with a number."
+    else:
+        rooms[new_room_name]=[]
+        roomsList.append(new_room_name)
+    emit("new_room_added", {"new_room_name":new_room_name, "username":data["username"], "error":error}, broadcast=True)
 
 if __name__ == "__main__":
     socketio.run(app)
