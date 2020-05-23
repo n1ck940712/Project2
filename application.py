@@ -23,9 +23,13 @@ limit = 100
 def index():
     return render_template("index.html", rooms=rooms)
 
-@socketio.on("connect")
-def connect():
+@socketio.on("loadroom")
+def loadroom():
     emit("load_room", {"rooms": rooms})
+
+@socketio.on("userConnected")
+def userConnected(data):
+    pass
 
 @socketio.on("message")
 def message(data):
@@ -41,8 +45,10 @@ def message(data):
 def on_join(data):
     username = data["username"]
     room = data["room"]
+    if room not in roomsList:
+        room = "General"
     join_room(room)
-    emit("joined", {"message": username + " has join the " + room + " room.", "username":username, "history":rooms[room]}, room=room)
+    emit("joined", {"message": username + " has join the " + room + " room.", "username":username, "history":rooms[room], "room":room}, room=room)
 
 @socketio.on("leave")
 def on_leave(data):

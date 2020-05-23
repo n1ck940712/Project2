@@ -1,27 +1,33 @@
     $(function(){
         var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
 
-        // prompt for username if first time visit
-        if (!localStorage.getItem("username")) {
-            var username = prompt("Please enter your name:",  "username");
-            username = username.charAt(0).toUpperCase() + username.slice(1);
-            localStorage.setItem("username",username);
-        }
+        socket.on("connect", function() {
+            // username
+            if (!localStorage.getItem("username")) {
+                window.usernameGlobal = prompt("Please enter your name:",  "username");
+                usernameGlobal = usernameGlobal.charAt(0).toUpperCase() + usernameGlobal.slice(1);
+                localStorage.setItem("username",usernameGlobal);
+            } else {
+                window.usernameGlobal = localStorage.getItem("username");
+            }
+            $("#username").html("Logged in as " + usernameGlobal); //insert username to heading
+            $("#message_submit").attr("disabled", true); //diable message submit button at start
 
-        // initialization
-        var username = localStorage.getItem("username");
-        $("#username").html("Logged in as " + username);
-        $("#message_submit").attr("disabled", true);
+            socket.emit("userConnected", {"username":usernameGlobal})
 
-        // check for active room
-        if (!localStorage.getItem("activeRoom")) {
-            var room = "General";
-            joinRoom(room);
-        } else {
-            var room = localStorage.getItem("activeRoom");
-            joinRoom(room);
-        }
+            // check for active room
+            if (!localStorage.getItem("activeRoom")) {
+                window.room = "General";
+                joinRoom(room);
+            } else {
+                window.room = localStorage.getItem("activeRoom");
+                joinRoom(room);
+            }
 
+            socket.emit("loadroom");
+        })
+
+        // send message
         // enter key triggers click message send button
         $("#message_box").on("keyup", function(key) {
             if ($(this).val().length > 0) {
@@ -33,23 +39,39 @@
                 $("#message_submit").attr("disabled", true);
             }
         });
-
         // click on send button to send message
         $("#message_submit").on("click", function() {
             $("#message_submit").attr("disabled", true);
             const message = $("#message_box").val();
             const time = new Date().toLocaleString();
             $("#message_box").val("");
-            socket.send({"message":message, "username":username, "time":time, "room":room});
+            socket.send({"message":message, "username":usernameGlobal, "time":time, "room":room});
         });
+        // display message from users
+        socket.on("message", data => {
+            const p = document.createElement("p");
+            const br = document.createElement("br");
+            const messageUsername = document.createElement("span");
+            const time = document.createElement("span");
+            time.innerHTML = data.time;
+            messageUsername.innerHTML = data.username;
+            time.className = "messageTime";
+            messageUsername.className = "messageUsername";
+            p.innerHTML = messageUsername.outerHTML + br.outerHTML + data.message + br.outerHTML + time.outerHTML;
+            if (data["username"] === usernameGlobal) {
+                p.className = "messageFloatRight";
+            } else {
+                p.className = "messageFloatLeft";
+            }
+            $("#chat_window").append(p);
+            $(".chat_window_container").scrollTop(500000);
+        })
 
-        // click on add room button to add new room
+        // add new room
         $("#add_new_room_submit").on("click", function(){
-            const message = document.createElement("h4");
-            message.innerHTML = "Enter name for new room";
-            $("#pop_up_message").html(message);
             $("#popUpWindow").show();
             $("#pop_up_addroom").show();
+            $("#pop_up_input").focus();
         })
         $("#pop_up_input").on("keyup", function(key) {
             if ($(this).val().length>0) {
@@ -57,16 +79,28 @@
                     let roomName = $(this).val();
                     roomName = roomName.charAt(0).toUpperCase()+roomName.slice(1);
                     $("#popUpWindow").hide();
-                    socket.emit("add_room", {"new_room_name":roomName, "username":localStorage.getItem("username")});
+                    $("#pop_up_addroom").hide();
+                    $("#pop_up_input").val("");
+                    socket.emit("add_room", {"new_room_name":roomName, "username":usernameGlobal});
                 }
             }
         })
-        // click on room name to join room
+        // new room added from users
+        socket.on("new_room_added", data => {
+            if (data.error === "") {
+                appendRoom(data["new_room_name"]);
+            } else {
+                if (data.username === usernameGlobal) {
+                    alert(data.error);
+                }
+            }
+        })
+
+        // join room
         $("#room_list").on("click", function(e) {
             const target = e.target;
             if (target.matches("li")) {
                 let newroom = target.innerHTML;
-                room = localStorage.getItem("activeRoom");
                 if (newroom == room) {
                     message = `already in ${room} room.`
                     printSysMsg(message);
@@ -77,18 +111,30 @@
                 }
             }
         })
+        // someone joined the room
+        socket.on("joined", data => {
+            localStorage.setItem("activeRoom", data.room);
+            if (data.username === usernameGlobal) {
+                load_messages(data.history);
+            }
+            printSysMsg(data.message);
+        })
+        // someone left the room
+        socket.on("left", data => {
+            printSysMsg(data.message);
+        })
 
-        // click other users message to private chat
+        // private message
         $("#chat_window").on("click", function(e) {
             const target = e.target;
             if (target.matches("p")) {
-                let username = target.children[0].innerHTML;
-                $("#private_chat_button").html(`Message ${username}`);
+                let receiver = target.children[0].innerHTML;
+                $("#private_chat_button").html(`Message ${receiver}`);
                 $("#popUpWindow").show();
                 $("#pop_up_privatechat").show();
-
             }
         })
+        //modal close button
         $(".closeButton").on("click", function() {
             $("#popUpWindow").hide();
             $("#pop_up_addroom").hide();
@@ -96,66 +142,22 @@
 
         })
 
-        // display message from users
-        socket.on("message", data => {
-            const p = document.createElement("p");
-            const br = document.createElement("br");
-            const username = document.createElement("span");
-            const time = document.createElement("span");
-            time.innerHTML = data.time;
-            username.innerHTML = data.username;
-            time.className = "messageTime";
-            username.className = "messageUsername";
-            p.innerHTML = username.outerHTML + br.outerHTML + data.message + br.outerHTML + time.outerHTML;
-            if (data["username"] === localStorage.getItem("username")) {
-                p.className = "messageFloatRight";
-            } else {
-                p.className = "messageFloatLeft";
-            }
-            $("#chat_window").append(p);
-            $(".chat_window_container").scrollTop(500000);
-        })
-
-        // someone joined the room
-        socket.on("joined", data => {
-            if (data.username === localStorage.getItem("username")) {
-                load_messages(data.history);
-            }
-            printSysMsg(data.message);
-        })
-
-        // someone left the room
-        socket.on("left", data => {
-            printSysMsg(data.message);
-        })
-
         // load room when first connected
         socket.on("load_room", data => {
             loadRooms(data);
         })
 
-        // new room added from users
-        socket.on("new_room_added", data => {
-            if (data.error === "") {
-                appendRoom(data["new_room_name"]);
-            } else {
-                if (data.username === localStorage.getItem("username")) {
-                    alert(data.error);
-                }
-            }
-        })
+// functions==============================================================================
+// functions==============================================================================
 
-
-// functions-----------------------------------------
         function leaveRoom(room) {
-            socket.emit("leave", {"username":username, "room":room});
             $("#"+room).removeClass("active");
+            socket.emit("leave", {"username":usernameGlobal, "room":room});
         }
 
         function joinRoom(room) {
-            localStorage.setItem("activeRoom", room);
-            socket.emit("join", {"username":username, "room":room});
             $("#"+room).addClass("active");
+            socket.emit("join", {"username":usernameGlobal, "room":room});
         }
 
         function printSysMsg(message) {
@@ -189,14 +191,14 @@
                 const p = document.createElement("p");
                 const mes = document.createElement("p");
                 const br = document.createElement("br");
-                const username = document.createElement("span");
+                const messageUsername = document.createElement("span");
                 const time = document.createElement("span");
                 time.innerHTML = data[i]["time"];
                 time.className = "messageTime";
-                username.innerHTML = data[i]["username"];
-                username.className = "messageUsername";
-                p.innerHTML = username.outerHTML + br.outerHTML + data[i]["message"] + br.outerHTML + time.outerHTML;
-                if (data[i]["username"] === localStorage.getItem("username")) {
+                messageUsername.innerHTML = data[i]["username"];
+                messageUsername.className = "messageUsername";
+                p.innerHTML = messageUsername.outerHTML + br.outerHTML + data[i]["message"] + br.outerHTML + time.outerHTML;
+                if (data[i]["username"] === usernameGlobal) {
                     p.className = "messageFloatRight";
                 } else {
                     p.className = "messageFloatLeft";
