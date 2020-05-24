@@ -1,6 +1,6 @@
     $(function(){
         var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
-
+        var appendRoomFlag = false
         socket.on("connect", function() {
             // username
             if (!localStorage.getItem("username")) {
@@ -10,21 +10,12 @@
             } else {
                 window.usernameGlobal = localStorage.getItem("username");
             }
-            $("#username").html("Logged in as " + usernameGlobal); //insert username to heading
-            $("#message_submit").attr("disabled", true); //diable message submit button at start
+            $("#username").html("Logged in as " + usernameGlobal);
+            $("#message_submit").attr("disabled", true);
 
             socket.emit("userConnected", {"username":usernameGlobal})
+            socket.emit("requestLoadRooms");
 
-            // check for active room
-            if (!localStorage.getItem("activeRoom")) {
-                window.room = "General";
-                joinRoom(room);
-            } else {
-                window.room = localStorage.getItem("activeRoom");
-                joinRoom(room);
-            }
-
-            socket.emit("loadroom");
         })
 
         // send message
@@ -45,29 +36,14 @@
             const message = $("#message_box").val();
             const time = new Date().toLocaleString();
             $("#message_box").val("");
-            socket.send({"message":message, "username":usernameGlobal, "time":time, "room":room});
+            socket.emit("roomMessage", {"message":message, "username":usernameGlobal, "time":time, "room":localStorage.getItem("activeRoom")});
         });
         // display message from users
-        socket.on("message", data => {
-            const p = document.createElement("p");
-            const br = document.createElement("br");
-            const messageUsername = document.createElement("span");
-            const time = document.createElement("span");
-            time.innerHTML = data.time;
-            messageUsername.innerHTML = data.username;
-            time.className = "messageTime";
-            messageUsername.className = "messageUsername";
-            p.innerHTML = messageUsername.outerHTML + br.outerHTML + data.message + br.outerHTML + time.outerHTML;
-            if (data["username"] === usernameGlobal) {
-                p.className = "messageFloatRight";
-            } else {
-                p.className = "messageFloatLeft";
-            }
-            $("#chat_window").append(p);
-            $(".chat_window_container").scrollTop(500000);
+        socket.on("sendToRoom", data => {
+            load_messages(data.history);
         })
 
-        // add new room
+        // add new room request
         $("#add_new_room_submit").on("click", function(){
             $("#popUpWindow").show();
             $("#pop_up_addroom").show();
@@ -81,43 +57,62 @@
                     $("#popUpWindow").hide();
                     $("#pop_up_addroom").hide();
                     $("#pop_up_input").val("");
-                    socket.emit("add_room", {"new_room_name":roomName, "username":usernameGlobal});
+                    socket.emit("requestAddRoom", {"roomName":roomName, "username":usernameGlobal});
                 }
             }
         })
-        // new room added from users
-        socket.on("new_room_added", data => {
+        // add new room response
+        socket.on("updateRoom", data => {
             if (data.error === "") {
-                appendRoom(data["new_room_name"]);
+                appendRoom(data["roomName"]);
             } else {
                 if (data.username === usernameGlobal) {
                     alert(data.error);
                 }
             }
         })
+        // load rooms
+        socket.on("loadRooms", data => {
+            if (data.error === "") {
+                loadRooms(data);
+                if (data.username && (data.username === usernameGlobal)) {
+                    $("#"+data.room).click();
+                }
+            }
+            else if (data.username === usernameGlobal) {
+                alert(data.error);
+            }
+        })
 
-        // join room
+        // click to join room
         $("#room_list").on("click", function(e) {
             const target = e.target;
             if (target.matches("li")) {
+                $(target).addClass("active");
+                $(target).siblings().removeClass("active");
                 let newroom = target.innerHTML;
-                if (newroom == room) {
+                let room = localStorage.getItem("activeRoom")
+                localStorage.setItem("activeRoom", newroom)
+                if (newroom === room && appendRoomFlag === false) {
                     message = `already in ${room} room.`
+                    console.log("if")
                     printSysMsg(message);
                 } else {
+                    console.log("else")
                     leaveRoom(room);
                     joinRoom(newroom);
-                    room=newroom;
                 }
+                $("#message_box").focus();
+                appendRoomFlag = false;
             }
         })
         // someone joined the room
         socket.on("joined", data => {
-            localStorage.setItem("activeRoom", data.room);
             if (data.username === usernameGlobal) {
                 load_messages(data.history);
+            } else {
+                printSysMsg(data.message);
             }
-            printSysMsg(data.message);
         })
         // someone left the room
         socket.on("left", data => {
@@ -142,22 +137,15 @@
 
         })
 
-        // load room when first connected
-        socket.on("load_room", data => {
-            loadRooms(data);
-        })
-
 // functions==============================================================================
 // functions==============================================================================
 
-        function leaveRoom(room) {
-            $("#"+room).removeClass("active");
-            socket.emit("leave", {"username":usernameGlobal, "room":room});
+        function leaveRoom(data) {
+            socket.emit("requestLeave", {"username":usernameGlobal, "room":data});
         }
 
-        function joinRoom(room) {
-            $("#"+room).addClass("active");
-            socket.emit("join", {"username":usernameGlobal, "room":room});
+        function joinRoom(data) {
+            socket.emit("requestJoin", {"username":usernameGlobal, "room":data});
         }
 
         function printSysMsg(message) {
@@ -169,20 +157,29 @@
         }
 
         function loadRooms(data) {
-            for (i  in data["rooms"]) {
-                appendRoom(i);
-            }
-            let room = localStorage.getItem("activeRoom");
-
-            $("#"+room).addClass("active");
+            $("#room_list").html("");
+            appendRooms(data);
         }
 
-        function appendRoom(room) {
-            const li = document.createElement("li");
-            li.className = "list-group-item";
-            li.setAttribute("id", room);
-            li.innerHTML = room.charAt(0).toUpperCase() + room.slice(1);
-            $("#room_list").append(li);
+        function appendRooms(data) {
+            for (i  in data.rooms) {
+                const li = document.createElement("li");
+                li.className = "list-group-item";
+                li.setAttribute("id", data.rooms[i]);
+                li.innerHTML = data.rooms[i];
+                $("#room_list").append(li);
+            }
+                if (!localStorage.getItem("activeRoom")) {
+                    room = "General";
+                } else if (data.rooms.includes(localStorage.getItem("activeRoom"))) {
+                    room = localStorage.getItem("activeRoom");
+                }
+                else {
+                    room = "General";
+                }
+                appendRoomFlag = true;
+                $("#"+room).addClass("active");
+                $("#"+room).click();
         }
 
         function load_messages(data) {
@@ -203,7 +200,6 @@
                 } else {
                     p.className = "messageFloatLeft";
                 }
-
                 $("#chat_window").append(p);
             }
             $(".chat_window_container").scrollTop(500000);
